@@ -1,0 +1,10 @@
+fun guh(a, b) {
+    print a + b
+} // i am a comment
+
+var i = 10
+
+/*
+i am a block comment
+fun guh(a, b)
+*/
