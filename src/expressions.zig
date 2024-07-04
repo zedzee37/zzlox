@@ -2,13 +2,12 @@ const std = @import("std");
 const lexer = @import("lexer.zig");
 
 pub const Literal = union(enum) {
-    pub const Tag = @typeInfo(Expr).Union.tag_type.?;
+    pub const Tag = @typeInfo(Literal).Union.tag_type.?;
 
-    STRING: []u8,
+    STRING: []const u8,
     BOOL: bool,
     NUMBER: f32,
     NIL,
-    void,
 
     const Self = @This();
 
@@ -18,11 +17,15 @@ pub const Literal = union(enum) {
 };
 
 pub const Binary = struct {
-    left: Expr,
-    right: Expr,
+    left: *const Expr,
+    right: *const Expr,
     operator: lexer.Token,
 
-    pub fn init(left: Expr, right: Expr, operator: lexer.Token) @This() {
+    pub fn init(
+        left: *const Expr,
+        right: *const Expr,
+        operator: lexer.Token,
+    ) @This() {
         return .{
             .left = left,
             .right = right,
@@ -33,9 +36,9 @@ pub const Binary = struct {
 
 pub const Unary = struct {
     operator: lexer.Token,
-    right: Expr,
+    right: *const Expr,
 
-    pub fn init(operator: lexer.Token, right: Expr) @This() {
+    pub fn init(operator: lexer.Token, right: *const Expr) @This() {
         return .{
             .operator = operator,
             .right = right,
@@ -49,7 +52,7 @@ pub const Expr = union(enum) {
     binary: Binary,
     unary: Unary,
     literal: Literal,
-    grouping: Expr,
+    grouping: *const Expr,
 
     const Self = @This();
 
@@ -57,3 +60,7 @@ pub const Expr = union(enum) {
         return @unionInit(Self, @tagName(t), value);
     }
 };
+
+test "expr" {
+    _ = Expr.init(Expr.Tag.literal, Literal.init(Literal.Tag.NUMBER, 100));
+}
