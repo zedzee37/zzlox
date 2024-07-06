@@ -9,25 +9,29 @@ const report = @import("logger.zig").report;
 const expressions = @import("expressions.zig");
 const Expr = expressions.Expr;
 
-// TODO: Make Parser take in an ArenaAllocator, use heap allocation
-// for expressions, and make parser only have the parse method as pub
-
 pub const ParserError = error{
     CouldNotParse,
     ExpectedCharacter,
+    CouldNotAllocate,
 };
 
 pub const Parser = struct {
     tokens: []Token,
     current: usize,
+    allocator: std.mem.Allocator,
 
     const Self = @This();
 
-    pub fn init(tokens: []Token) Self {
-        return .{ .tokens = tokens, .current = 0 };
+    fn init(allocator: std.mem.Allocator, tokens: []Token) Self {
+        return .{
+            .tokens = tokens,
+            .current = 0,
+            .allocator = allocator,
+        };
     }
 
-    pub fn parse(self: *Self) ?Expr {
+    pub fn parse(arena: *std.heap.ArenaAllocator, tokens: []Token) ?*Expr {
+        var self = Self.init(arena.allocator(), tokens);
         return self.expression() catch null;
     }
 
@@ -48,11 +52,11 @@ pub const Parser = struct {
         self.current += 1;
     }
 
-    fn expression(self: *Self) ParserError!Expr {
+    fn expression(self: *Self) ParserError!*Expr {
         return self.equality();
     }
 
-    fn equality(self: *Self) !Expr {
+    fn equality(self: *Self) !*Expr {
         var expr = try self.comparison();
 
         while (self.match(&.{
@@ -62,17 +66,21 @@ pub const Parser = struct {
             const operator = self.getPrevious();
             const right = try self.comparison();
 
-            expr = Expr.init(Expr.Tag.binary, expressions.Binary.init(
-                &expr,
-                &right,
-                operator,
-            ));
+            const binary = self.allocator.create(expressions.Binary) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            binary.* = expressions.Binary.init(expr, right, operator);
+
+            expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            expr.* = Expr.init(Expr.Tag.binary, binary);
         }
 
         return expr;
     }
 
-    fn comparison(self: *Self) !Expr {
+    fn comparison(self: *Self) !*Expr {
         var expr = try self.term();
 
         while (self.match(&.{
@@ -84,83 +92,136 @@ pub const Parser = struct {
             const operator = self.getPrevious();
             const right = try self.term();
 
-            expr = Expr.init(Expr.Tag.binary, expressions.Binary.init(
-                &expr,
-                &right,
-                operator,
-            ));
+            const binary = self.allocator.create(expressions.Binary) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            binary.* = expressions.Binary.init(expr, right, operator);
+
+            expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            expr.* = Expr.init(Expr.Tag.binary, binary);
         }
 
         return expr;
     }
 
-    fn term(self: *Self) !Expr {
+    fn term(self: *Self) !*Expr {
         var expr = try self.factor();
 
         while (self.match(&.{ TokenType.Tag.PLUS, TokenType.Tag.MINUS })) {
             const operator = self.getPrevious();
             const right = try self.factor();
 
-            expr = Expr.init(Expr.Tag.binary, expressions.Binary.init(
-                &expr,
-                &right,
-                operator,
-            ));
+            const binary = self.allocator.create(expressions.Binary) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            binary.* = expressions.Binary.init(expr, right, operator);
+
+            expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            expr.* = Expr.init(Expr.Tag.binary, binary);
         }
 
         return expr;
     }
 
-    fn factor(self: *Self) !Expr {
+    fn factor(self: *Self) !*Expr {
         var expr = try self.unary();
 
         while (self.match(&.{ TokenType.Tag.STAR, TokenType.Tag.SLASH })) {
             const operator = self.getPrevious();
             const right = try self.unary();
 
-            expr = Expr.init(Expr.Tag.binary, expressions.Binary.init(
-                &expr,
-                &right,
-                operator,
-            ));
+            const binary = self.allocator.create(expressions.Binary) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            binary.* = expressions.Binary.init(expr, right, operator);
+
+            expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            expr.* = Expr.init(Expr.Tag.binary, binary);
         }
 
         return expr;
     }
 
-    fn unary(self: *Self) !Expr {
+    fn unary(self: *Self) !*Expr {
         if (self.match(&.{ TokenType.Tag.BANG, TokenType.Tag.MINUS })) {
             const operator = self.getPrevious();
             const right = try self.unary();
 
-            return Expr.init(Expr.Tag.unary, expressions.Unary.init(
-                operator,
-                &right,
-            ));
+            const u = self.allocator.create(expressions.Unary) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            u.* = expressions.Unary.init(operator, right);
+
+            const expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            expr.* = Expr.init(Expr.Tag.unary, u);
         }
 
         return self.primary();
     }
 
-    fn primary(self: *Self) !Expr {
-        const literalMaybe = if (self.match(&.{TokenType.Tag.FALSE}))
-            expressions.Literal.init(expressions.Literal.Tag.BOOL, false)
-        else if (self.match(&.{TokenType.Tag.TRUE}))
-            expressions.Literal.init(expressions.Literal.Tag.BOOL, true)
-        else if (self.match(&.{TokenType.Tag.NIL}))
-            expressions.Literal.init(expressions.Literal.Tag.NIL, {})
-        else
-            null;
+    fn primary(self: *Self) !*Expr {
+        if (self.match(&.{TokenType.Tag.FALSE})) {
+            const expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            const literal = self.allocator.create(expressions.Literal) catch {
+                return ParserError.CouldNotAllocate;
+            };
 
-        if (literalMaybe) |literal| {
-            return Expr.init(Expr.Tag.literal, literal);
+            literal.* = expressions.Literal.init(
+                expressions.Literal.Tag.BOOL,
+                false,
+            );
+
+            expr.* = Expr.init(Expr.Tag.literal, literal);
+            return expr;
+        } else if (self.match(&.{TokenType.Tag.TRUE})) {
+            const expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            const literal = self.allocator.create(expressions.Literal) catch {
+                return ParserError.CouldNotAllocate;
+            };
+
+            literal.* = expressions.Literal.init(
+                expressions.Literal.Tag.BOOL,
+                false,
+            );
+
+            expr.* = Expr.init(Expr.Tag.literal, literal);
+            return expr;
+        } else if (self.match(&.{TokenType.Tag.NIL})) {
+            const expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            const literal = self.allocator.create(expressions.Literal) catch {
+                return ParserError.CouldNotAllocate;
+            };
+
+            literal.* = expressions.Literal.init(
+                expressions.Literal.Tag.NIL,
+                {},
+            );
+
+            expr.* = Expr.init(Expr.Tag.literal, literal);
+            return expr;
         }
 
         if (self.match(&.{ TokenType.Tag.NUMBER, TokenType.Tag.STRING })) {
-            return Expr.init(
-                Expr.Tag.literal,
-                Parser.asLiteral(self.getPrevious()),
-            );
+            const expr = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            const literal = try self.asLiteral(self.getPrevious());
+            expr.* = Expr.init(Expr.Tag.literal, literal);
+            return expr;
         }
 
         if (self.match(&.{TokenType.Tag.LEFT_PAREN})) {
@@ -169,7 +230,12 @@ pub const Parser = struct {
                 TokenType.Tag.RIGHT_PAREN,
                 "Expect ')' after expression.",
             );
-            return Expr.init(Expr.Tag.grouping, &expr);
+
+            const group = self.allocator.create(Expr) catch {
+                return ParserError.CouldNotAllocate;
+            };
+            group.* = Expr.init(Expr.Tag.grouping, expr);
+            return group;
         }
         return ParserError.CouldNotParse;
     }
@@ -220,8 +286,14 @@ pub const Parser = struct {
         return self.current >= self.tokens.len;
     }
 
-    inline fn asLiteral(token: Token) expressions.Literal {
-        return switch (token.token_type) {
+    inline fn asLiteral(self: Self, token: Token) !*expressions.Literal {
+        const literal: *expressions.Literal = self.allocator.create(
+            expressions.Literal,
+        ) catch {
+            return ParserError.CouldNotParse;
+        };
+
+        literal.* = switch (token.token_type) {
             .STRING => expressions.Literal.init(
                 expressions.Literal.Tag.STRING,
                 token.token_type.STRING,
@@ -230,8 +302,10 @@ pub const Parser = struct {
                 expressions.Literal.Tag.NUMBER,
                 token.token_type.NUMBER,
             ),
-            else => expressions.Literal.init(expressions.Literal.Tag.NIL, {}),
+            else => return ParserError.CouldNotParse,
         };
+
+        return literal;
     }
 
     inline fn handleParserError(
@@ -251,3 +325,17 @@ pub const Parser = struct {
         }
     }
 };
+
+test "test enums" {
+    const allocator = std.testing.allocator;
+    const expr = try allocator.create(Expr);
+    defer allocator.destroy(expr);
+
+    const literal = try allocator.create(expressions.Literal);
+    defer allocator.destroy(literal);
+
+    literal.* = .{ .NUMBER = 10 };
+    expr.* = .{ .literal = literal };
+
+    std.debug.print("{d}", .{expr.literal.NUMBER});
+}

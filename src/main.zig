@@ -10,7 +10,7 @@ const expressions = @import("expressions.zig.");
 const Expr = expressions.Expr;
 
 const parser = @import("parser.zig");
-const Parser = parser.Parser;
+const parse = parser.Parser.parse;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -67,9 +67,8 @@ fn run(source: []u8) !void {
     defer arena.deinit();
 
     const tokens = lex(allocator, source).?;
-    var pars = Parser.init(tokens);
-    const expr = pars.parse().?;
-    const str = try ast_printer.stringifyExpr(allocator, &expr);
+    const expr = parse(&arena, tokens).?;
+    const str = try ast_printer.stringifyExpr(allocator, expr);
 
-    std.debug.print("{s}", .{str});
+    std.debug.print("{s}\n", .{str});
 }
