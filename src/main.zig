@@ -1,9 +1,16 @@
 const std = @import("std");
+const ast_printer = @import("ast_printer.zig");
 
 const lexer = @import("lexer.zig");
 const lex = lexer.Lexer.lex;
 const Token = lexer.Token;
 const TokenType = lexer.TokenType;
+
+const expressions = @import("expressions.zig.");
+const Expr = expressions.Expr;
+
+const parser = @import("parser.zig");
+const Parser = parser.Parser;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
@@ -55,17 +62,14 @@ fn runPrompt(allocator: std.mem.Allocator) !void {
 }
 
 fn run(source: []u8) !void {
-    const allocator = std.heap.page_allocator;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
 
-    const possibleTokens = lex(allocator, source);
-    if (possibleTokens) |tokens| {
-        defer allocator.free(tokens);
+    const tokens = lex(allocator, source).?;
+    var pars = Parser.init(tokens);
+    const expr = pars.parse().?;
+    const str = try ast_printer.stringifyExpr(allocator, &expr);
 
-        for (tokens) |tok| {
-            const str = try tok.string(allocator);
-            defer allocator.free(str);
-
-            std.debug.print("{s}\n", .{str});
-        }
-    }
+    std.debug.print("{s}", .{str});
 }

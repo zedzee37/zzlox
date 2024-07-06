@@ -42,6 +42,7 @@ pub const TokenType = union(enum) {
     CLASS,
     ELSE,
     FUN,
+
     FOR,
     IF,
     NIL,

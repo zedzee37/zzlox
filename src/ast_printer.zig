@@ -8,49 +8,70 @@ const StringifyError = error{Error};
 
 pub fn stringifyExpr(
     allocator: std.mem.Allocator,
-    expr: Expr,
-) StringifyError![]const u8 {
-    return switch (expr) {
-        .unary => stringifyUnary(allocator, expr.unary),
-        .binary => stringifyBinary(allocator, expr.binary),
-        .literal => stringifyLiteral(allocator, expr.literal),
-        .grouping => stringifyGrouping(allocator, expr.grouping),
+    expr: *const Expr,
+) StringifyError![]u8 {
+    return switch (expr.*) {
+        .binary => blk: {
+            const bin = expr.*.binary;
+            break :blk std.fmt.allocPrint(allocator, "({s} {s} {s})", .{
+                "guh",
+                try stringifyExpr(allocator, bin.left),
+                "guh",
+            }) catch StringifyError.Error;
+        },
+        .unary => blk: {
+            var l = "unary".*;
+            break :blk &l;
+        },
+        .literal => blk: {
+            var l = "literal".*;
+            break :blk &l;
+        },
+        .grouping => blk: {
+            var l = "grouping".*;
+            break :blk &l;
+        },
     };
 }
 
 fn stringifyUnary(
     allocator: std.mem.Allocator,
     expr: expressions.Unary,
-) StringifyError![]const u8 {
+) StringifyError![]u8 {
     return std.fmt.allocPrint(allocator, "({s} {s})", .{
         expr.operator.lexeme,
-        stringifyExpr(allocator, expr.right.*) catch return StringifyError.Error,
+        stringifyExpr(allocator, expr.right) catch return StringifyError.Error,
     }) catch return StringifyError.Error;
 }
 
 fn stringifyBinary(
     allocator: std.mem.Allocator,
     expr: expressions.Binary,
-) StringifyError![]const u8 {
+) StringifyError![]u8 {
     return std.fmt.allocPrint(allocator, "({s} {s} {s})", .{
         expr.operator.lexeme,
-        stringifyExpr(allocator, expr.left.*) catch return StringifyError.Error,
-        stringifyExpr(allocator, expr.right.*) catch return StringifyError.Error,
+        stringifyExpr(allocator, expr.left) catch return StringifyError.Error,
+        stringifyExpr(allocator, expr.right) catch return StringifyError.Error,
     }) catch return StringifyError.Error;
 }
 
 fn stringifyLiteral(
     allocator: std.mem.Allocator,
     expr: expressions.Literal,
-) StringifyError![]const u8 {
+) StringifyError![]u8 {
     return switch (expr) {
         .BOOL => blk: {
             if (expr.BOOL) {
-                break :blk "true";
+                var t = "true".*;
+                break :blk &t;
             }
-            break :blk "false";
+            var f = "false".*;
+            break :blk &f;
         },
-        .STRING => expr.STRING,
+        .STRING => blk: {
+            var str = "some string".*;
+            break :blk &str;
+        },
         .NUMBER => blk: {
             const str = std.fmt.allocPrint(
                 allocator,
@@ -59,18 +80,21 @@ fn stringifyLiteral(
             ) catch return StringifyError.Error;
             break :blk str;
         },
-        .NIL => "nil",
+        .NIL => blk: {
+            var n = "nil".*;
+            break :blk &n;
+        },
     };
 }
 
 fn stringifyGrouping(
     allocator: std.mem.Allocator,
     expr: *const Expr,
-) StringifyError![]const u8 {
+) StringifyError![]u8 {
     return std.fmt.allocPrint(
         allocator,
         "(group {s})",
-        .{stringifyExpr(allocator, expr.*) catch return StringifyError.Error},
+        .{stringifyExpr(allocator, expr) catch return StringifyError.Error},
     ) catch return StringifyError.Error;
 }
 
@@ -78,11 +102,8 @@ test "printing" {
     var arena = std.heap.ArenaAllocator.init(std.testing.allocator);
     defer arena.deinit(); // secret no memory leak trick no clickbait
     const allocator = arena.allocator();
-
     const literal1 = Expr.init(Expr.Tag.literal, expressions.Literal.init(expressions.Literal.Tag.NUMBER, 123));
-
     const literal2 = Expr.init(Expr.Tag.literal, expressions.Literal.init(expressions.Literal.Tag.NUMBER, 45.68));
-
     const unaryExpr = Expr.init(Expr.Tag.unary, expressions.Unary.init(Token.init(
         TokenType.init(TokenType.Tag.MINUS, {}),
         "-",
@@ -100,6 +121,6 @@ test "printing" {
         ),
     );
 
-    const str = try stringifyExpr(allocator, expr);
+    const str = try stringifyExpr(allocator, &expr);
     std.debug.print("{s}", .{str});
 }

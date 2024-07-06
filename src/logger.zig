@@ -2,8 +2,7 @@ const std = @import("std");
 const LexerError = @import("lexer.zig").LexerError;
 
 pub fn reportError(line: u32, msg: []const u8) !void {
-    var where = "".*;
-    try report(line, &where, msg);
+    try report(line, "", msg);
 }
 
 pub fn handleLexerError(line: u32, err: LexerError) !void {
@@ -28,7 +27,7 @@ pub fn handleLexerError(line: u32, err: LexerError) !void {
     };
 }
 
-fn report(line: u32, where: []u8, message: []const u8) !void {
+pub fn report(line: u32, where: anytype, message: []const u8) !void {
     const stdout = std.io.getStdOut().writer();
     try stdout.print("[line {d}] Error{s}: {s}\n", .{ line, where, message });
 }
