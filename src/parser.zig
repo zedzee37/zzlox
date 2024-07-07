@@ -290,7 +290,7 @@ pub const Parser = struct {
         const literal: *expressions.Literal = self.allocator.create(
             expressions.Literal,
         ) catch {
-            return ParserError.CouldNotParse;
+            return ParserError.CouldNotAllocate;
         };
 
         literal.* = switch (token.token_type) {
