@@ -1,18 +1,4 @@
 const std = @import("std");
-const ast_printer = @import("ast_printer.zig");
-
-const lexer = @import("lexer.zig");
-const lex = lexer.Lexer.lex;
-const Token = lexer.Token;
-const TokenType = lexer.TokenType;
-
-const expressions = @import("expressions.zig.");
-const Expr = expressions.Expr;
-
-const parser = @import("parser.zig");
-const parse = parser.Parser.parse;
-
-const interpret = @import("interpreter.zig").interpret;
 
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
