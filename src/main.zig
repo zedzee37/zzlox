@@ -1,5 +1,11 @@
 const std = @import("std");
 
+const lexer = @import("lexer.zig");
+const lex = lexer.lex;
+const LexerError = lexer.LexerError;
+const LexerPayload = lexer.LexerPayload;
+const Token = lexer.Token;
+
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const file = getFileArg();
@@ -30,7 +36,7 @@ fn runFile(allocator: std.mem.Allocator, file: []const u8) !void {
     const buffer = try fp.readToEndAlloc(allocator, size);
     defer allocator.free(buffer);
 
-    try run(buffer);
+    run(buffer) catch @panic("Found error, quitting.\n");
 }
 
 fn runPrompt(allocator: std.mem.Allocator) !void {
@@ -45,17 +51,40 @@ fn runPrompt(allocator: std.mem.Allocator) !void {
             std.math.maxInt(usize),
         );
         defer allocator.free(buffer);
-        try run(buffer);
+        run(buffer) catch {}; // we dont want to kill the prompt if it errors
     }
 }
 
 fn run(source: []u8) !void {
-    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
-    const allocator = arena.allocator();
-    defer arena.deinit();
+    const allocator = std.heap.page_allocator;
 
-    const tokens = lex(allocator, source).?;
-    const expr = parse(&arena, tokens).?;
+    var payload = LexerPayload.init();
+    const tokens = lex(allocator, source, &payload) catch |err| {
+        const stdErr = std.io.getStdErr().writer();
+        switch (err) {
+            LexerError.UnexpectedCharacter => stdErr.print(
+                "Unexpected character at {d}:{d}, found: {c}.\n",
+                .{ payload.line.?, payload.where.?, payload.found.? },
+            ) catch {},
+            LexerError.OutOfRange => stdErr.print(
+                "Tried to read character out of range.\n",
+                .{},
+            ) catch {},
+            LexerError.CouldNotParseNumber => stdErr.print(
+                "Could not parse number at: {d}.",
+                .{payload.line.?},
+            ) catch {},
+            else => {},
+        }
+        return err;
+    };
 
-    interpret(allocator, expr);
+    const std_out = std.io.getStdOut().writer();
+    for (tokens) |tok| {
+        const str = try tok.string(allocator);
+        defer str.deinit();
+        try std_out.print("{s}\n", .{str.data});
+    }
+
+    defer allocator.free(tokens);
 }
