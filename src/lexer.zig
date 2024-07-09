@@ -120,13 +120,15 @@ pub const LexerError = error{
     CouldNotParseNumber,
     ExpectedCharacter,
     UnexpectedCharacter,
+    CouldNotAddToken,
+    OutOfMemory,
 };
 
 pub fn lex(
     allocator: Allocator,
     source: []const u8,
     payload: *LexerPayload,
-) ![]Token {
+) LexerError![]Token {
     var tokens = std.ArrayList(Token).init(allocator);
 
     var self = Lexer{
@@ -141,17 +143,17 @@ pub fn lex(
     while (!self.isAtEnd()) {
         const tokMaybe = self.nextToken();
         if (tokMaybe) |tok| {
-            try tokens.append(try tok);
+            tokens.append(try tok) catch return LexerError.CouldNotAddToken;
         }
     }
 
-    try tokens.append(Token.init(
+    tokens.append(Token.init(
         TokenType.initEmpty(TokenType.EOF),
         self.line,
         "",
-    ));
+    )) catch return LexerError.CouldNotAddToken;
 
-    return try tokens.toOwnedSlice();
+    return tokens.toOwnedSlice() catch return LexerError.OutOfMemory;
 }
 
 const Lexer = struct {
@@ -275,7 +277,7 @@ const Lexer = struct {
                 self.payload.line = self.line;
                 self.payload.where = self.current;
                 self.payload.found = try self.get();
-                return LexerError.OutOfRange;
+                return LexerError.ExpectedCharacter;
             }
             self.current += 1;
         }

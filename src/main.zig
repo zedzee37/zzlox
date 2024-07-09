@@ -60,22 +60,7 @@ fn run(source: []u8) !void {
 
     var payload = LexerPayload.init();
     const tokens = lex(allocator, source, &payload) catch |err| {
-        const stdErr = std.io.getStdErr().writer();
-        switch (err) {
-            LexerError.UnexpectedCharacter => stdErr.print(
-                "Unexpected character at {d}:{d}, found: {c}.\n",
-                .{ payload.line.?, payload.where.?, payload.found.? },
-            ) catch {},
-            LexerError.OutOfRange => stdErr.print(
-                "Tried to read character out of range.\n",
-                .{},
-            ) catch {},
-            LexerError.CouldNotParseNumber => stdErr.print(
-                "Could not parse number at: {d}.",
-                .{payload.line.?},
-            ) catch {},
-            else => {},
-        }
+        handleLexerError(err, payload);
         return err;
     };
 
@@ -87,4 +72,32 @@ fn run(source: []u8) !void {
     }
 
     defer allocator.free(tokens);
+}
+
+fn handleLexerError(err: LexerError, payload: LexerPayload) void {
+    const stdErr = std.io.getStdErr().writer();
+    switch (err) {
+        LexerError.UnexpectedCharacter => stdErr.print(
+            "Unexpected character at {d}:{d}, found: {c}.\n",
+            .{ payload.line.?, payload.where.?, payload.found.? },
+        ) catch {},
+        LexerError.OutOfRange => stdErr.print(
+            "Tried to read character out of range.\n",
+            .{},
+        ) catch {},
+        LexerError.CouldNotParseNumber => stdErr.print(
+            "Could not parse number at: {d}.",
+            .{payload.line.?},
+        ) catch {},
+        LexerError.ExpectedCharacter => stdErr.print(
+            "Unexpected character at {d}:{d}, found: {c}, expected {c}.\n",
+            .{
+                payload.line.?,
+                payload.where.?,
+                payload.found.?,
+                payload.expected.?,
+            },
+        ) catch {},
+        else => {},
+    }
 }
