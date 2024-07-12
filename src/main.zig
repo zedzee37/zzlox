@@ -6,6 +6,14 @@ const LexerError = lexer.LexerError;
 const LexerPayload = lexer.LexerPayload;
 const Token = lexer.Token;
 
+const parser = @import("parser.zig");
+const parse = parser.parse;
+const ParserPayload = parser.ParserPayload;
+const ParserError = parser.ParserError;
+
+const ast_printer = @import("ast_printer.zig");
+const stringifyExpr = ast_printer.stringify;
+
 pub fn main() !void {
     const allocator = std.heap.page_allocator;
     const file = getFileArg();
@@ -56,22 +64,27 @@ fn runPrompt(allocator: std.mem.Allocator) !void {
 }
 
 fn run(source: []u8) !void {
-    const allocator = std.heap.page_allocator;
+    var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    const allocator = arena.allocator();
+    defer arena.deinit();
 
-    var payload = LexerPayload.init();
-    const tokens = lex(allocator, source, &payload) catch |err| {
-        handleLexerError(err, payload);
+    var lexer_payload = LexerPayload.init();
+    const tokens = lex(allocator, source, &lexer_payload) catch |err| {
+        handleLexerError(err, lexer_payload);
         return err;
     };
 
-    const std_out = std.io.getStdOut().writer();
-    for (tokens) |tok| {
-        const str = try tok.string(allocator);
-        defer str.deinit();
-        try std_out.print("{s}\n", .{str.data});
-    }
+    var parser_payload = ParserPayload.init();
+    const expr = parse(&arena, tokens, &parser_payload) catch |err| {
+        handleParserError(err, parser_payload);
+        return err;
+    };
+    const str = stringifyExpr(&arena, expr) catch {
+        std.debug.print("guh", .{});
+        return;
+    };
 
-    defer allocator.free(tokens);
+    std.debug.print("{s}\n", .{str.data});
 }
 
 fn handleLexerError(err: LexerError, payload: LexerPayload) void {
@@ -99,5 +112,31 @@ fn handleLexerError(err: LexerError, payload: LexerPayload) void {
             },
         ) catch {},
         else => {},
+    }
+}
+
+fn handleParserError(err: ParserError, payload: ParserPayload) void {
+    const stdErr = std.io.getStdErr().writer();
+    switch (err) {
+        ParserError.ExpectedToken => stdErr.print(
+            "Unexpected token at line {d}, found: {s}, expected: {s}.\n",
+            .{ payload.line.?, @tagName(payload.found.?), @tagName(payload.expected.?) },
+        ) catch {},
+        ParserError.CouldNotParse => stdErr.print(
+            "An unexpected error occurred, could not parse.\n",
+            .{},
+        ) catch {},
+        ParserError.UnexpectedToken => stdErr.print(
+            "Reached an unexpected token.\n",
+            .{},
+        ) catch {},
+        ParserError.CouldNotAllocate => stdErr.print(
+            "Could not allocate room for expression.\n",
+            .{},
+        ) catch {},
+        ParserError.OutOfBoundsError => stdErr.print(
+            "Attempted to access index out of bounds, length {d}, index: {d}.\n",
+            .{ payload.length.?, payload.idx.? },
+        ) catch {},
     }
 }

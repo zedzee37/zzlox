@@ -97,6 +97,10 @@ pub const Token = struct {
             self.lexeme,
         });
     }
+
+    pub inline fn asTag(self: @This()) TokenTag {
+        return @as(TokenTag, self.token_type);
+    }
 };
 
 pub const LexerPayload = struct {
